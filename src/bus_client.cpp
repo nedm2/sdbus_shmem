@@ -5,11 +5,23 @@
 #include <unistd.h>
 #include <systemd/sd-bus.h>
 
+#include <boost/interprocess/shared_memory_object.hpp>
+#include <boost/interprocess/mapped_region.hpp>
+
+namespace ipc = boost::interprocess;
+
+ipc::shared_memory_object shmem_obj;
+ipc::mapped_region mapped_obj;
+ipc::permissions allow_all;
+int* shobj;
+
 int main(int argc, char *argv[]) {
         sd_bus_error error = SD_BUS_ERROR_NULL;
         sd_bus_message *m = NULL;
         sd_bus *bus = NULL;
         int r;
+
+        allow_all.set_unrestricted();
 
         /* Connect to the system bus */
         r = sd_bus_open_user(&bus);
@@ -18,13 +30,14 @@ int main(int argc, char *argv[]) {
                 goto finish;
         }
 
+
         fprintf(stderr, "Can send file handles: %i\n", sd_bus_can_send(bus, 'h'));
 
         /* Issue the method call and store the respons message in m */
         r = sd_bus_call_method(bus,
-                               "net.poettering.Calculator",   /* service to contact */
-                               "/net/poettering/Calculator",   /* object path */
-                               "net.poettering.Calculator",   /* interface name */
+                               "org.sdbus_shmem.sdbus_shmem",   /* service to contact */
+                               "/org/sdbus_shmem/sdbus_shmem",   /* object path */
+                               "org.sdbus_shmem.sdbus_shmem",   /* interface name */
                                "GetFile",                    /* method name */
                                &error,                        /* object to return error in */
                                &m,

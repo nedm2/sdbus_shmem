@@ -7,43 +7,17 @@
 #include <sys/stat.h>
 #include <systemd/sd-bus.h>
 
+#include <boost/interprocess/shared_memory_object.hpp>
+#include <boost/interprocess/mapped_region.hpp>
+
+namespace ipc = boost::interprocess;
+
 int fd;
 int running = 1;
-
-static int method_multiply(sd_bus_message *m, void *userdata, sd_bus_error *ret_error) {
-        int64_t x, y;
-        int r;
-
-        /* Read the parameters */
-        r = sd_bus_message_read(m, "xx", &x, &y);
-        if (r < 0) {
-                fprintf(stderr, "Failed to parse parameters: %s\n", strerror(-r));
-                return r;
-        }
-
-        /* Reply with the response */
-        return sd_bus_reply_method_return(m, "x", x * y);
-}
-
-static int method_divide(sd_bus_message *m, void *userdata, sd_bus_error *ret_error) {
-        int64_t x, y;
-        int r;
-
-        /* Read the parameters */
-        r = sd_bus_message_read(m, "xx", &x, &y);
-        if (r < 0) {
-                fprintf(stderr, "Failed to parse parameters: %s\n", strerror(-r));
-                return r;
-        }
-
-        /* Return an error on division by zero */
-        if (y == 0) {
-                sd_bus_error_set_const(ret_error, "net.poettering.DivisionByZero", "Sorry, can't allow division by zero.");
-                return -EINVAL;
-        }
-
-        return sd_bus_reply_method_return(m, "x", x / y);
-}
+ipc::shared_memory_object shmem_obj;
+ipc::mapped_region mapped_obj;
+ipc::permissions allow_all;
+int* shobj;
 
 static int method_getfile(sd_bus_message *m, void *userdata, sd_bus_error *ret_error) {
         return sd_bus_reply_method_return(m, "h", fd);
@@ -54,11 +28,8 @@ static int method_exit(sd_bus_message *m, void *userdata, sd_bus_error *ret_erro
         return sd_bus_reply_method_return(m, "");
 }
 
-/* The vtable of our little object, implements the net.poettering.Calculator interface */
 static const sd_bus_vtable calculator_vtable[] = {
         SD_BUS_VTABLE_START(0),
-        SD_BUS_METHOD("Multiply", "xx", "x", method_multiply, SD_BUS_VTABLE_UNPRIVILEGED),
-        SD_BUS_METHOD("Divide",   "xx", "x", method_divide,   SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_METHOD("GetFile",  "", "h", method_getfile,  SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_METHOD("Exit",  "", "", method_exit,  SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_VTABLE_END
@@ -69,16 +40,51 @@ int main(int argc, char *argv[]) {
         sd_bus *bus = NULL;
         int r;
 
-        fd = open("MyFile.txt", O_RDWR | O_CREAT, 0644);
+        // fd = open("MyFile.txt", O_RDWR | O_CREAT, 0644);
 
-        if (fd < 0) {
-                fprintf(stderr, "Failed to open file desc: %s\n", strerror(errno));
-                goto finish;
+        allow_all.set_unrestricted();
+
+        try {
+            shmem_obj = ipc::shared_memory_object(
+                    ipc::open_or_create
+                  , "MyShmem"
+                  , ipc::read_write
+                  , allow_all
+                  );
+        } catch (ipc::interprocess_exception&)
+        {
+            fprintf(stderr, "Cannot open shmem\n");
+            goto finish;
         }
 
-        write(fd, "hello world\n", 12);
+        shmem_obj.truncate(sizeof(int));
 
-        /* Connect to the user bus this time */
+        try
+        {
+            mapped_obj = ipc::mapped_region(
+                    shmem_obj,
+                    ipc::read_write
+                    );
+        } catch (ipc::interprocess_exception&)
+        {
+            fprintf(stderr, "Cannot map shmem\n");
+            goto finish;
+        }
+
+        shobj = static_cast<int*>(mapped_obj.get_address());
+
+        *shobj = 157;
+
+        fd = shmem_obj.get_mapping_handle().handle;
+
+        // if (fd < 0) {
+        //         fprintf(stderr, "Failed to open file desc: %s\n", strerror(errno));
+        //         goto finish;
+        // }
+
+        // write(fd, "hello world\n", 12);
+
+        /* Connect to the user bus */
         r = sd_bus_open_user(&bus);
         if (r < 0) {
                 fprintf(stderr, "Failed to connect to system bus: %s\n", strerror(-r));
@@ -90,8 +96,8 @@ int main(int argc, char *argv[]) {
         /* Install the object */
         r = sd_bus_add_object_vtable(bus,
                                      &slot,
-                                     "/net/poettering/Calculator",  /* object path */
-                                     "net.poettering.Calculator",   /* interface name */
+                                     "/org/sdbus_shmem/sdbus_shmem",
+                                     "org.sdbus_shmem.sdbus_shmem",
                                      calculator_vtable,
                                      NULL);
         if (r < 0) {
@@ -100,7 +106,7 @@ int main(int argc, char *argv[]) {
         }
 
         /* Take a well-known service name so that clients can find us */
-        r = sd_bus_request_name(bus, "net.poettering.Calculator", 0);
+        r = sd_bus_request_name(bus, "org.sdbus_shmem.sdbus_shmem", 0);
         if (r < 0) {
                 fprintf(stderr, "Failed to acquire service name: %s\n", strerror(-r));
                 goto finish;
