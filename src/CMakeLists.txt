@@ -10,7 +10,7 @@ target_link_libraries(SdbusService
 )
 
 add_executable(SdbusClient
-    bus_service.c
+    bus_client.c
 )
 
 target_link_libraries(SdbusClient

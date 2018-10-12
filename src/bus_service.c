@@ -69,14 +69,14 @@ int main(int argc, char *argv[]) {
         sd_bus *bus = NULL;
         int r;
 
-        //fd = open("/home/niall/MyFile", O_RDWR);
-        fd = open("MyFile.txt", O_RDWR | O_CREAT | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+        fd = open("MyFile.txt", O_RDWR | O_CREAT, 0644);
+
         if (fd < 0) {
                 fprintf(stderr, "Failed to open file desc: %s\n", strerror(errno));
                 goto finish;
         }
 
-        write(fd, "hello world", 11);
+        write(fd, "hello world\n", 12);
 
         /* Connect to the user bus this time */
         r = sd_bus_open_user(&bus);
@@ -106,15 +106,22 @@ int main(int argc, char *argv[]) {
                 goto finish;
         }
 
-        while (running) {
+        while (1) {
                 /* Process requests */
                 r = sd_bus_process(bus, NULL);
                 if (r < 0) {
                         fprintf(stderr, "Failed to process bus: %s\n", strerror(-r));
                         goto finish;
                 }
+                fprintf(stderr, "processed request: %i\n", r);
                 if (r > 0) /* we processed a request, try to process another one, right-away */
                         continue;
+
+                if (!running)
+                {
+                    fprintf(stderr, "Exit requested\n");
+                    goto finish;
+                }
 
                 /* Wait for the next request to process */
                 r = sd_bus_wait(bus, (uint64_t) -1);

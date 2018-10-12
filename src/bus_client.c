@@ -1,5 +1,8 @@
 #include <stdio.h>
+#include <fcntl.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
 #include <systemd/sd-bus.h>
 
 int main(int argc, char *argv[]) {
@@ -15,14 +18,17 @@ int main(int argc, char *argv[]) {
                 goto finish;
         }
 
+        fprintf(stderr, "Can send file handles: %i\n", sd_bus_can_send(bus, 'h'));
+
         /* Issue the method call and store the respons message in m */
         r = sd_bus_call_method(bus,
                                "net.poettering.Calculator",   /* service to contact */
-                               "net/poettering/Calculator",   /* object path */
+                               "/net/poettering/Calculator",   /* object path */
                                "net.poettering.Calculator",   /* interface name */
                                "GetFile",                    /* method name */
                                &error,                        /* object to return error in */
-                               &m, "");                    /* second argument */
+                               &m,
+                               "");                    /* second argument */
         if (r < 0) {
                 fprintf(stderr, "Failed to issue method call: %s\n", error.message);
                 goto finish;
@@ -31,6 +37,7 @@ int main(int argc, char *argv[]) {
         /* Parse the response message */
         int fd;
         r = sd_bus_message_read(m, "h", &fd);
+        write(fd, "hello from bus_client\n", 22);
         if (r < 0) {
                 fprintf(stderr, "Failed to parse response message: %s\n", strerror(-r));
                 goto finish;
