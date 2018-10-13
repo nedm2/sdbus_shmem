@@ -13,7 +13,6 @@
 namespace ipc = boost::interprocess;
 
 int fd;
-int running = 1;
 ipc::shared_memory_object shmem_obj;
 ipc::mapped_region mapped_obj;
 ipc::permissions allow_all;
@@ -23,15 +22,9 @@ static int method_getfile(sd_bus_message *m, void *userdata, sd_bus_error *ret_e
         return sd_bus_reply_method_return(m, "h", fd);
 }
 
-static int method_exit(sd_bus_message *m, void *userdata, sd_bus_error *ret_error) {
-        return running = 0;
-        return sd_bus_reply_method_return(m, "");
-}
-
 static const sd_bus_vtable calculator_vtable[] = {
         SD_BUS_VTABLE_START(0),
         SD_BUS_METHOD("GetFile",  "", "h", method_getfile,  SD_BUS_VTABLE_UNPRIVILEGED),
-        SD_BUS_METHOD("Exit",  "", "", method_exit,  SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_VTABLE_END
 };
 
@@ -39,8 +32,6 @@ int main(int argc, char *argv[]) {
         sd_bus_slot *slot = NULL;
         sd_bus *bus = NULL;
         int r;
-
-        // fd = open("MyFile.txt", O_RDWR | O_CREAT, 0644);
 
         allow_all.set_unrestricted();
 
@@ -72,17 +63,8 @@ int main(int argc, char *argv[]) {
         }
 
         shobj = static_cast<int*>(mapped_obj.get_address());
-
         *shobj = 157;
-
         fd = shmem_obj.get_mapping_handle().handle;
-
-        // if (fd < 0) {
-        //         fprintf(stderr, "Failed to open file desc: %s\n", strerror(errno));
-        //         goto finish;
-        // }
-
-        // write(fd, "hello world\n", 12);
 
         /* Connect to the user bus */
         r = sd_bus_open_user(&bus);
@@ -122,12 +104,6 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "processed request: %i\n", r);
                 if (r > 0) /* we processed a request, try to process another one, right-away */
                         continue;
-
-                if (!running)
-                {
-                    fprintf(stderr, "Exit requested\n");
-                    goto finish;
-                }
 
                 /* Wait for the next request to process */
                 r = sd_bus_wait(bus, (uint64_t) -1);

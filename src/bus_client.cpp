@@ -15,17 +15,19 @@ ipc::mapped_region mapped_obj;
 ipc::permissions allow_all;
 int* shobj;
 
-class SdbusShmemMappable
+class mappable_handle
 {
 public:
+    mappable_handle(ipc::file_handle_t handle) : mHandle(handle) {}
     ipc::mapping_handle_t get_mapping_handle() const
     {
         ipc::mapping_handle_t ret;
-        ret.handle = handle;
+        ret.handle = mHandle;
         ret.is_xsi = false;
         return ret;
     }
-    ipc::file_handle_t handle;
+private:
+    ipc::file_handle_t mHandle;
 };
 
 int main(int argc, char *argv[]) {
@@ -43,10 +45,9 @@ int main(int argc, char *argv[]) {
                 goto finish;
         }
 
-
         fprintf(stderr, "Can send file handles: %i\n", sd_bus_can_send(bus, 'h'));
 
-        /* Issue the method call and store the respons message in m */
+        // Request the file descriptor from the service
         r = sd_bus_call_method(bus,
                                "org.sdbus_shmem.sdbus_shmem",   /* service to contact */
                                "/org/sdbus_shmem/sdbus_shmem",   /* object path */
@@ -60,7 +61,7 @@ int main(int argc, char *argv[]) {
                 goto finish;
         }
 
-        /* Parse the response message */
+        // Get the file descriptor from the response message
         int fd;
         r = sd_bus_message_read(m, "h", &fd);
         if (r < 0) {
@@ -69,7 +70,7 @@ int main(int argc, char *argv[]) {
         }
 
         {
-            SdbusShmemMappable mappable({fd});
+            mappable_handle mappable(fd);
 
             try
             {
