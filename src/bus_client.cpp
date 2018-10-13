@@ -15,6 +15,17 @@ ipc::mapped_region mapped_obj;
 ipc::permissions allow_all;
 int* shobj;
 
+class SdbusShmemMappable
+{
+public:
+    ipc::mapping_handle_t get_mapping_handle() const
+    {
+    }
+    ipc::file_handle_t handle;
+    bool is_shm;
+
+};
+
 int main(int argc, char *argv[]) {
         sd_bus_error error = SD_BUS_ERROR_NULL;
         sd_bus_message *m = NULL;
@@ -50,10 +61,25 @@ int main(int argc, char *argv[]) {
         /* Parse the response message */
         int fd;
         r = sd_bus_message_read(m, "h", &fd);
-        write(fd, "hello from bus_client\n", 22);
         if (r < 0) {
                 fprintf(stderr, "Failed to parse response message: %s\n", strerror(-r));
                 goto finish;
+        }
+
+        {
+            SdbusShmemMappable mappable({fd, true});
+
+            try
+            {
+                mapped_obj = ipc::mapped_region(
+                        mappable,
+                        ipc::read_write
+                        );
+            } catch (ipc::interprocess_exception& e)
+            {
+                fprintf(stderr, "Cannot map shmem: %s\n", e.what());
+                goto finish;
+            }
         }
 
 finish:
