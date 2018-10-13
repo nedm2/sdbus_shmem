@@ -20,10 +20,12 @@ class SdbusShmemMappable
 public:
     ipc::mapping_handle_t get_mapping_handle() const
     {
+        ipc::mapping_handle_t ret;
+        ret.handle = handle;
+        ret.is_xsi = false;
+        return ret;
     }
     ipc::file_handle_t handle;
-    bool is_shm;
-
 };
 
 int main(int argc, char *argv[]) {
@@ -67,7 +69,7 @@ int main(int argc, char *argv[]) {
         }
 
         {
-            SdbusShmemMappable mappable({fd, true});
+            SdbusShmemMappable mappable({fd});
 
             try
             {
@@ -80,6 +82,10 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Cannot map shmem: %s\n", e.what());
                 goto finish;
             }
+
+            shobj = static_cast<int*>(mapped_obj.get_address());
+
+            fprintf(stderr, "Shmem contents: %i", *shobj);
         }
 
 finish:
